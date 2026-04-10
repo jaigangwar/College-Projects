@@ -33,15 +33,27 @@ cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS expenses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER,
     amount REAL,
     category TEXT,
     description TEXT,
-    expense_date TEXT
+    expense_date TEXT, 
+    created_at TIMESTAMP PRIMARY KEY DEFAULT CURRENT_TIMESTAMP
 )
 """)
 
 conn.commit()
+
+# Fix any existing null IDs and ensure id values are populated
+cursor.execute("SELECT rowid FROM expenses WHERE id IS NULL")
+null_rows = [row[0] for row in cursor.fetchall()]
+if null_rows:
+    cursor.execute("SELECT COALESCE(MAX(id), 0) FROM expenses")
+    max_id = cursor.fetchone()[0] or 0
+    for rowid in null_rows:
+        max_id += 1
+        cursor.execute("UPDATE expenses SET id = ? WHERE rowid = ?", (max_id, rowid))
+    conn.commit()
 
 # LOAD DATA
 cursor.execute("SELECT * FROM expenses")
@@ -49,7 +61,7 @@ data = cursor.fetchall()
 
 df = pd.DataFrame(
     data,
-    columns=["ID", "Amount", "Category", "Description", "Date"]
+    columns=["ID", "Amount", "Category", "Description", "Date","created_at"]
 )
 
 total_expense = df["Amount"].sum() if not df.empty else 0
@@ -224,9 +236,13 @@ with col1:
 
     if st.button("Add Expense"):
 
+        cursor.execute("SELECT COALESCE(MAX(id), 0) FROM expenses")
+        max_id = cursor.fetchone()[0] or 0
+        next_id = max_id + 1
+
         cursor.execute(
-            "INSERT INTO expenses (amount, category, description, expense_date) VALUES (?, ?, ?, ?)",
-            (amount, category, description, str(expense_date))
+            "INSERT INTO expenses (id, amount, category, description, expense_date) VALUES (?, ?, ?, ?, ?)",
+            (next_id, amount, category, description, str(expense_date))
         )
 
         conn.commit()
